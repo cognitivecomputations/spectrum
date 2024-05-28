@@ -1,3 +1,4 @@
+# spectrum_analyzer.py
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import numpy as np
@@ -108,7 +109,8 @@ class ModelModifier:
         print(f"Total time taken: {total_time:.2f} seconds")
 
     def save_snr_to_json(self):
-        filename = f"snr_results_{self.model_name.split('/')[-1]}.json" if self.model_name else "snr_results.json"
+        model_name_slug = self.model_name.replace('/', '-').replace('_', '-')
+        filename = f"snr_results_{model_name_slug}.json" if self.model_name else "snr_results.json"
         serializable_data = {}
         for layer_name, info in self.layer_snr.items():
             snr_value = info['snr'].item() if isinstance(info['snr'], torch.Tensor) else info['snr']
@@ -168,18 +170,23 @@ class ModelModifier:
 
 # Handle command-line arguments
 parser = argparse.ArgumentParser(description="Process SNR data for layers.")
-parser.add_argument('--json', type=str, help='Path to existing JSON file for processing')
-parser.add_argument('--top_percent', type=int, default=None, help='Top percentage of layers to select, overriding the default')
+parser.add_argument('--model-name', type=str, required=True, help='Model name or path to the model')
+parser.add_argument('--top-percent', type=int, default=None, help='Top percentage of layers to select, overriding the default')
 args = parser.parse_args()
 
-if args.json:
+# Check for existing SNR results file
+model_name_slug = args.model_name.replace('/', '-').replace('_', '-')
+snr_file_path = os.path.join('model_snr_ratios', f'snr_results_{model_name_slug}.json')
+
+if os.path.exists(snr_file_path):
+    print(f"Found existing SNR results file for {args.model_name}")
     modifier = ModelModifier(top_percent=args.top_percent)
-    modifier.generate_unfrozen_params_yaml(args.json, args.top_percent)
+    modifier.generate_unfrozen_params_yaml(snr_file_path, args.top_percent)
 else:
-    model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
+    print(f"No existing SNR results file found for {args.model_name}. Proceeding with SNR calculation.")
     batch_size = input_dialog(title="Batch Size", text="Enter the batch size:").run()
     batch_size = int(batch_size) if batch_size else 1
-    modifier = ModelModifier(model_name=model_name, batch_size=batch_size)
+    modifier = ModelModifier(model_name=args.model_name, batch_size=batch_size)
     selected_weight_types = modifier.interactive_select_weights()
     if selected_weight_types:
         modifier.assess_layers_snr(selected_weight_types)
