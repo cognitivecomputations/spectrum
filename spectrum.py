@@ -110,7 +110,7 @@ class ModelModifier:
 
     def save_snr_to_json(self):
         model_name_slug = self.model_name.replace('/', '-').replace('_', '-')
-        filename = f"snr_results_{model_name_slug}.json" if self.model_name else "snr_results.json"
+        filename = os.path.join('model_snr_ratios', f'snr_results_{model_name_slug}.json')
         serializable_data = {}
         for layer_name, info in self.layer_snr.items():
             snr_value = info['snr'].item() if isinstance(info['snr'], torch.Tensor) else info['snr']
