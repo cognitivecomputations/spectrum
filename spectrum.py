@@ -184,7 +184,7 @@ args = parser.parse_args()
 
 # Check for existing SNR results file
 model_name_slug = args.model_name.replace('/', '-').replace('_', '-')
-snr_file_path = os.path.join('model_snr_ratios', f'snr_results_{model_name_slug}.json')
+snr_file_path = os.path.join('model_snr_results', f'snr_results_{model_name_slug}.json')
 
 if os.path.exists(snr_file_path):
     print(f"Found existing SNR results file for {args.model_name}")
