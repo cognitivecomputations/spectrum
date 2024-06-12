@@ -110,14 +110,22 @@ class ModelModifier:
 
     def save_snr_to_json(self):
         model_name_slug = self.model_name.replace('/', '-').replace('_', '-')
-        filename = os.path.join('model_snr_ratios', f'snr_results_{model_name_slug}.json')
+        directory = 'model_snr_ratios'
+        filename = os.path.join(directory, f'snr_results_{model_name_slug}.json')
+        
+        # Ensure the directory exists
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        
         serializable_data = {}
         for layer_name, info in self.layer_snr.items():
             snr_value = info['snr'].item() if isinstance(info['snr'], torch.Tensor) else info['snr']
             layer_type = str(info['type'])
             serializable_data[layer_name] = {'snr': snr_value, 'type': layer_type}
+        
         with open(filename, 'w') as file:
             json.dump(serializable_data, file, indent=4)
+        
         print(f"Results saved to {filename}")
         self.save_top_snr_ratios_to_json(filename)
         self.generate_unfrozen_params_yaml(filename)
