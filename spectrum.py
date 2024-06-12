@@ -110,7 +110,7 @@ class ModelModifier:
 
     def save_snr_to_json(self):
         model_name_slug = self.model_name.replace('/', '-').replace('_', '-')
-        directory = 'model_snr_ratios'
+        directory = 'model_snr_results'
         filename = os.path.join(directory, f'snr_results_{model_name_slug}.json')
         
         # Ensure the directory exists
