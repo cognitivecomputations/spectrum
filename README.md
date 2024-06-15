@@ -43,12 +43,9 @@ python spectrum.py --model-name meta-llama/Meta-Llama-3-8B-Instruct --top-percen
 
 ## Scanning New Models
 
-If you want to scan a new model that is not in the `model_snr_results` folder, you can add your scans via a pull request (PR). Ensure you specify the batch size suitable for your hardware. For example, we have successfully used a batch size of 4 for 70B models on an 8xH100 node.
+It will check the model_snr_results folder to see if we've already scanned it (we invite you to add your own scans for models we don't have via PR) - if we have, it will give you the top n% of those ratios. Otherwise, it will ask you what batch size you want to scan at. We've been able to use a batch_size of 4 for 70b models on an 8xH100 node. It will then load the model, and you will be presented with all available modules to scan. We typically only select the MLP/attn layers - but if you're doing continued pretraining or language tasks it wouldn't hurt to include all available modules.
 
-## Output Files
-
-- **SNR Ratios**: Stored in the `model_snr_results` folder.
-- **Unfrozen Parameters YAML**: A configuration file that matches an Axolotl config. You can copy and paste it directly into your Axolotl YAML file.
+It will then scan the model, and output the snr ratios in the model_snr_results folder. It will also output a sorted from highest to lowest SNR ratios, along with an unfrozen parameters yaml. This matches an axolotl config, and you can copy and paste it directly into your axolotl yaml. That's it!
 
 ## Integration with Axolotl
 
