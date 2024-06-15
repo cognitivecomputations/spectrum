@@ -4,7 +4,7 @@ This repository contains the implementation of Spectrum, as detailed in the pape
 
 ## Overview
 
-Spectrum is a tool for scanning and evaluating the Signal-to-Noise Ratio (SNR) of layers in machine learning models. By identifying the top n% of layers with the highest SNR, you can optimize training efficiency.
+Spectrum is a tool for scanning and evaluating the Signal-to-Noise Ratio (SNR) of layers in large language models. By identifying the top n% of layers with the highest SNR, you can optimize training efficiency.
 
 ## Features
 
