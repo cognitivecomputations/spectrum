@@ -511,4 +511,3 @@ This project is licensed under the Apache-2.0 License.
 ## Acknowledgments
 
 Thank you for using Spectrum! For any questions or issues, please open an issue on this repository.
-```
