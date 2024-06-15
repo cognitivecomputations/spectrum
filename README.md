@@ -1,4 +1,3 @@
-```markdown
 # Spectrum
 
 This repository contains the implementation of Spectrum, as detailed in the paper [Spectrum: Targeted Training on Signal to Noise Ratio](https://arxiv.org/abs/2406.06623).
