@@ -17,7 +17,7 @@ Spectrum is a tool for scanning and evaluating the Signal-to-Noise Ratio (SNR) o
 To use Spectrum, you need to have Python installed. Clone this repository and install the necessary dependencies:
 
 ```bash
-[git clone ](https://github.com/cognitivecomputations/spectrum.git)
+git clone https://github.com/cognitivecomputations/spectrum.git
 cd spectrum
 pip install -r requirements.txt
 ```
