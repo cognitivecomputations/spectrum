@@ -27,7 +27,7 @@ pip install -r requirements.txt
 To use Spectrum, run the following command:
 
 ```bash
-python spectrum.py --model-name <insert local or HF repo here> --top-percent 50
+python spectrum.py --model-name <insert local or HF repo here> --top-percent <top % of snr ratios to target>
 ```
 
 - `--model-name`: Specify the local model path or the Hugging Face repository.
