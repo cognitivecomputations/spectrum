@@ -150,6 +150,8 @@ class ModelModifier:
         yaml_filename = f"{json_file_base}_unfrozenparameters_{top_percent}percent.yaml"
         with open(yaml_filename, 'w') as file:
             file.write("unfrozen_parameters:\n")
+            file.write("- ^lm_head.weight$\n")
+            file.write("- ^model.embed_tokens.weight$\n")
             for layer_type, layer_names in top_layers_by_type.items():
                 file.write(f"# {layer_type} layers\n")
                 for layer_name in layer_names:
