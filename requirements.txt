@@ -1,7 +1,7 @@
 auto_mix_prep
 datasets
 icecream
-numpy=
+numpy
 pandas
 prompt_toolkit
 pydantic
