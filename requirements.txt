@@ -9,5 +9,3 @@ torch
 tqdm
 transformers
 accelerate
-sentencepiece
-protobuf
