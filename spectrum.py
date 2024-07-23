@@ -1,6 +1,6 @@
 # spectrum.py
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
 import numpy as np
 import json
 from prompt_toolkit.shortcuts import checkboxlist_dialog, input_dialog
@@ -16,9 +16,38 @@ class ModelModifier:
         self.batch_size = batch_size
 
         if model_name:
-            self.model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float32, low_cpu_mem_usage=True, trust_remote_code=True, device_map="auto")
+            try:
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    model_name, 
+                    torch_dtype=torch.float32, 
+                    low_cpu_mem_usage=True, 
+                    trust_remote_code=True, 
+                    device_map="auto"
+                )
+            except KeyError as e:
+                print(f"Error loading model: {e}")
+                print("Attempting to load with custom configuration...")
+                config = AutoConfig.from_pretrained(model_name)
+                config.rope_scaling = {"type": "linear", "factor": 1.0}
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    model_name,
+                    config=config,
+                    torch_dtype=torch.float32,
+                    low_cpu_mem_usage=True,
+                    trust_remote_code=True,
+                    device_map="auto"
+                )
+
             self.optimizer = torch.optim.Adam(self.model.parameters())
             self.tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, use_fast=True, add_prefix_space=True)
+            
+            # Check if the model config has rope_scaling
+            if not hasattr(self.model.config, 'rope_scaling'):
+                self.model.config.rope_scaling = {'type': 'linear'}
+            elif not isinstance(self.model.config.rope_scaling, dict):
+                self.model.config.rope_scaling = {'type': 'linear'}
+            elif 'type' not in self.model.config.rope_scaling:
+                self.model.config.rope_scaling['type'] = 'linear'
         else:
             self.model = None
             self.optimizer = None
