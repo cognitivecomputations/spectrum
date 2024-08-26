@@ -37,9 +37,6 @@ class ModelModifier:
                     trust_remote_code=True,
                     device_map="auto"
                 )
-
-            self.optimizer = torch.optim.Adam(self.model.parameters())
-            self.tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, use_fast=True, add_prefix_space=True)
             
             # Check if the model config has rope_scaling
             if not hasattr(self.model.config, 'rope_scaling'):
@@ -50,8 +47,6 @@ class ModelModifier:
                 self.model.config.rope_scaling['type'] = 'linear'
         else:
             self.model = None
-            self.optimizer = None
-            self.tokenizer = None
 
         self.layer_snr = {}
         self.layer_types = []
@@ -207,29 +202,33 @@ class ModelModifier:
             json.dump(all_snr_layers, file, indent=4)
         print(f"All SNR layers sorted and saved to {filename}")
 
-# Handle command-line arguments
-parser = argparse.ArgumentParser(description="Process SNR data for layers.")
-parser.add_argument('--model-name', type=str, required=True, help='Model name or path to the model')
-parser.add_argument('--top-percent', type=int, default=None, help='Top percentage of layers to select, overriding the default')
-args = parser.parse_args()
+def main():
+    # Handle command-line arguments
+    parser = argparse.ArgumentParser(description="Process SNR data for layers.")
+    parser.add_argument('--model-name', type=str, required=True, help='Model name or path to the model')
+    parser.add_argument('--top-percent', type=int, default=None, help='Top percentage of layers to select, overriding the default')
+    args = parser.parse_args()
 
-# Check for existing SNR results file
-model_name_slug = args.model_name.replace('/', '-').replace('_', '-')
-snr_file_path = os.path.join('model_snr_results', f'snr_results_{model_name_slug}.json')
+    # Check for existing SNR results file
+    model_name_slug = args.model_name.replace('/', '-').replace('_', '-')
+    snr_file_path = os.path.join('model_snr_results', f'snr_results_{model_name_slug}.json')
 
-if os.path.exists(snr_file_path):
-    print(f"Found existing SNR results file for {args.model_name}")
-    modifier = ModelModifier(top_percent=args.top_percent)
-    modifier.generate_unfrozen_params_yaml(snr_file_path, args.top_percent)
-else:
-    print(f"No existing SNR results file found for {args.model_name}. Proceeding with SNR calculation.")
-    batch_size = input_dialog(title="Batch Size", text="Enter the batch size:").run()
-    batch_size = int(batch_size) if batch_size else 1
-    modifier = ModelModifier(model_name=args.model_name, batch_size=batch_size)
-    selected_weight_types = modifier.interactive_select_weights()
-    if selected_weight_types:
-        modifier.assess_layers_snr(selected_weight_types)
-        modifier.save_snr_to_json()
-        print("Finished SNR scanning and data saved.")
+    if os.path.exists(snr_file_path):
+        print(f"Found existing SNR results file for {args.model_name}")
+        modifier = ModelModifier(top_percent=args.top_percent)
+        modifier.generate_unfrozen_params_yaml(snr_file_path, args.top_percent)
     else:
-        print("No weight types selected.")
+        print(f"No existing SNR results file found for {args.model_name}. Proceeding with SNR calculation.")
+        batch_size = input_dialog(title="Batch Size", text="Enter the batch size:").run()
+        batch_size = int(batch_size) if batch_size else 1
+        modifier = ModelModifier(model_name=args.model_name, batch_size=batch_size)
+        selected_weight_types = modifier.interactive_select_weights()
+        if selected_weight_types:
+            modifier.assess_layers_snr(selected_weight_types)
+            modifier.save_snr_to_json()
+            print("Finished SNR scanning and data saved.")
+        else:
+            print("No weight types selected.")
+
+if __name__ == "__main__":
+    main()
