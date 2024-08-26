@@ -163,8 +163,10 @@ class ModelModifier:
     def _estimate_sigma_with_full_iqr(S):
         """
         Estimate sigma using the Interquartile Range (IQR) method.
+        Ensures that the quantile tensor is on the same device as S.
         """
-        q75, q25 = torch.quantile(S, torch.tensor([0.75, 0.25]))
+        quantiles = torch.tensor([0.75, 0.25], device=S.device)
+        q75, q25 = torch.quantile(S, quantiles)
         return (q75 - q25) / 1.349
 
     def assess_layers_snr(self, selected_weight_types):
