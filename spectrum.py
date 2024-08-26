@@ -1,4 +1,6 @@
 # spectrum.py
+
+# Import necessary libraries
 import torch
 from transformers import AutoModelForCausalLM, AutoConfig
 import numpy as np
@@ -11,7 +13,15 @@ import time
 
 
 class ModelModifier:
+    """
+    A class for modifying and analyzing neural network models.
+    It calculates Signal-to-Noise Ratio (SNR) for model layers and provides utilities for model manipulation.
+    """
+
     def __init__(self, model_name=None, top_percent=50, batch_size=1):
+        """
+        Initialize the ModelModifier with model name, top percentage of layers to consider, and batch size.
+        """
         self.model_name = model_name
         self.top_percent = top_percent
         self.batch_size = batch_size
@@ -20,6 +30,9 @@ class ModelModifier:
         self.layer_types = []
 
     def _load_model(self):
+        """
+        Load the specified model, handling potential errors and ensuring proper configuration.
+        """
         try:
             model = AutoModelForCausalLM.from_pretrained(
                 self.model_name,
@@ -47,6 +60,9 @@ class ModelModifier:
 
     @staticmethod
     def _ensure_rope_scaling(model):
+        """
+        Ensure that the model has proper RoPE (Rotary Position Embedding) scaling configuration.
+        """
         if not hasattr(model.config, "rope_scaling"):
             model.config.rope_scaling = {"type": "linear"}
         elif not isinstance(model.config.rope_scaling, dict):
@@ -55,6 +71,9 @@ class ModelModifier:
             model.config.rope_scaling["type"] = "linear"
 
     def get_weight_types(self):
+        """
+        Retrieve and categorize different types of weights in the model.
+        """
         weight_types = set()
         for name, module in self.model.named_modules():
             parts = name.split(".")
@@ -69,6 +88,9 @@ class ModelModifier:
         return list(weight_types)
 
     def interactive_select_weights(self):
+        """
+        Provide an interactive dialog for users to select which weight types to analyze.
+        """
         weight_types = self.get_weight_types()
         sorted_weight_types = self._sort_weight_types(weight_types)
         selected_types = checkboxlist_dialog(
@@ -82,6 +104,9 @@ class ModelModifier:
 
     @staticmethod
     def _sort_weight_types(weight_types):
+        """
+        Sort weight types into categories for better organization.
+        """
         categories = {}
         for wt in weight_types:
             category = wt.split(".")[0]
@@ -93,6 +118,9 @@ class ModelModifier:
         return [wt for sublist in sorted_categories.values() for wt in sublist]
 
     def calculate_snr_for_layer(self, layer_type):
+        """
+        Calculate the Signal-to-Noise Ratio (SNR) for a specific layer type.
+        """
         layers = [
             (name, module)
             for name, module in self.model.named_modules()
@@ -125,15 +153,24 @@ class ModelModifier:
 
     @staticmethod
     def _marchenko_pastur_threshold(sigma, n, m):
+        """
+        Calculate the Marchenko-Pastur threshold for determining signal and noise.
+        """
         beta = n / m if n < m else m / n
         return sigma * np.sqrt((1 + np.sqrt(beta)) ** 2)
 
     @staticmethod
     def _estimate_sigma_with_full_iqr(S):
+        """
+        Estimate sigma using the Interquartile Range (IQR) method.
+        """
         q75, q25 = torch.quantile(S, torch.tensor([0.75, 0.25]))
         return (q75 - q25) / 1.349
 
     def assess_layers_snr(self, selected_weight_types):
+        """
+        Assess the SNR for all selected weight types.
+        """
         start_time = time.time()
         with tqdm(
             total=len(selected_weight_types),
@@ -146,6 +183,9 @@ class ModelModifier:
         print(f"Total time taken: {time.time() - start_time:.2f} seconds")
 
     def save_snr_to_json(self):
+        """
+        Save the calculated SNR results to a JSON file.
+        """
         model_name_slug = self.model_name.replace("/", "-").replace("_", "-")
         directory = "model_snr_results"
         filename = os.path.join(directory, f"snr_results_{model_name_slug}.json")
@@ -172,6 +212,9 @@ class ModelModifier:
         self._generate_unfrozen_params_yaml(filename)
 
     def _generate_unfrozen_params_yaml(self, json_filename, top_percent=None):
+        """
+        Generate a YAML file with the top percentage of unfrozen parameters based on SNR.
+        """
         top_percent = top_percent if top_percent is not None else self.top_percent
         with open(json_filename, "r") as file:
             snr_data = json.load(file)
@@ -208,6 +251,9 @@ class ModelModifier:
         print(f"Top {top_percent}% SNR layers saved to {yaml_filename}")
 
     def _save_top_snr_ratios_to_json(self, json_filename, filename=None):
+        """
+        Save the top SNR ratios to a separate JSON file for easy analysis.
+        """
         with open(json_filename, "r") as file:
             snr_data = json.load(file)
 
@@ -230,6 +276,9 @@ class ModelModifier:
 
 
 def main():
+    """
+    Main function to run the SNR analysis process.
+    """
     parser = argparse.ArgumentParser(description="Process SNR data for layers.")
     parser.add_argument(
         "--model-name", type=str, required=True, help="Model name or path to the model"
