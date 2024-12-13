@@ -41,6 +41,16 @@ class ModelModifier:
                     trust_remote_code=True,
                     device_map="auto"
                 )
+            except RuntimeError as e:
+                print(f"Error loading model: {e}")
+                print("Attempting to load on the CPU...")
+
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    model_name,
+                    torch_dtype=torch.float32,
+                    trust_remote_code=True,
+                    device_map="cpu"
+                )
 
             # Check if the model config has rope_scaling
             if not hasattr(self.model.config, 'rope_scaling'):
