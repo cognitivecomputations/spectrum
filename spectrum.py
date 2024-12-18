@@ -13,7 +13,7 @@ from transformers import AutoConfig, AutoModelForCausalLM
 
 class ModelModifier:
 
-    def __init__(self, model_name=None, top_percent=50, batch_size=1):
+    def __init__(self, model_name=None, top_percent=50, batch_size=1, cuda=False):
         self.model_name = model_name
         self.top_percent = top_percent
         self.batch_size = batch_size
@@ -26,6 +26,11 @@ class ModelModifier:
                     low_cpu_mem_usage=True,
                     trust_remote_code=True,
                     device_map="auto"
+                ) if cuda else AutoModelForCausalLM.from_pretrained(
+                    model_name,
+                    torch_dtype=torch.float32,
+                    trust_remote_code=True,
+                    device_map="cpu"
                 )
             except KeyError as e:
                 print(f"Error loading model: {e}")
@@ -41,16 +46,9 @@ class ModelModifier:
                     trust_remote_code=True,
                     device_map="auto"
                 )
-            except RuntimeError as e:
+            except (RuntimeError or NotImplementedError) as e:
                 print(f"Error loading model: {e}")
-                print("Attempting to load on the CPU...")
-
-                self.model = AutoModelForCausalLM.from_pretrained(
-                    model_name,
-                    torch_dtype=torch.float32,
-                    trust_remote_code=True,
-                    device_map="cpu"
-                )
+                print("Try passing --cuda=False!")
 
             # Check if the model config has rope_scaling
             if not hasattr(self.model.config, 'rope_scaling'):
@@ -166,13 +164,11 @@ class ModelModifier:
 
 
     def save_snr_to_json(self):
-        model_name_slug = self.model_name.replace('/', '-').replace('_', '-')
+        model_name_slug = os.path.basename(self.model_name) if os.path.exists(self.model_name) else self.model_name.replace('/', '-').replace('_', '-')
         directory = 'model_snr_results'
         filename = os.path.join(directory, f'snr_results_{model_name_slug}.json')
 
-        # Ensure the directory exists
-        if not os.path.exists(directory):
-            os.makedirs(directory)
+        os.makedirs(directory, exist_ok=True)
 
         serializable_data = dict()
 
@@ -229,6 +225,7 @@ class ModelModifier:
 
         print(f"Top {top_percent}% SNR layers saved to {yaml_filename}")
 
+
     def save_top_snr_ratios_to_json(self, json_filename, filename=None):
         with open(json_filename, 'r') as file:
             snr_data = json.load(file)
@@ -260,7 +257,8 @@ def main():
     # Handle command-line arguments
     parser = argparse.ArgumentParser(description="Process SNR data for layers.")
     parser.add_argument('--model-name', type=str, required=True, help='Model name or path to the model')
-    parser.add_argument('--top-percent', type=int, default=None, help='Top percentage of layers to select, overriding the default')
+    parser.add_argument('--top-percent', type=int, default=50, help='Top percentage of layers to select, overriding the default')
+    parser.add_argument('--cuda', type=bool, default=False, help='Whether to use the GPU')
     args = parser.parse_args()
 
     # Check for existing SNR results file
@@ -269,13 +267,13 @@ def main():
 
     if os.path.exists(snr_file_path):
         print(f"Found existing SNR results file for {args.model_name}")
-        modifier = ModelModifier(top_percent=args.top_percent)
+        modifier = ModelModifier(top_percent=args.top_percent, cuda=args.cuda)
         modifier.generate_unfrozen_params_yaml(snr_file_path, args.top_percent)
     else:
         print(f"No existing SNR results file found for {args.model_name}. Proceeding with SNR calculation.")
         batch_size = input_dialog(title="Batch Size", text="Enter the batch size:").run()
         batch_size = int(batch_size) if batch_size else 1
-        modifier = ModelModifier(model_name=args.model_name, batch_size=batch_size)
+        modifier = ModelModifier(model_name=args.model_name, batch_size=batch_size, cuda=args.cuda)
         selected_weight_types = modifier.interactive_select_weights()
 
         if selected_weight_types:
