@@ -2,3 +2,4 @@ numpy
 torch
 tqdm
 transformers
+accelerate

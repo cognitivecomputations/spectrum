@@ -83,9 +83,16 @@ class ModelModifier:
         weight_types = self.get_weight_types()
         categories = dict()
 
+        def get_layer(weight: list):
+            try:
+                return weight[1]
+            except IndexError:
+                return None
+
         for wt in weight_types:
-            print(wt)
-            category, layer = wt.split(".")
+            arr = wt.split(".")
+            category = arr[0]
+            layer = get_layer(arr)
 
             if category in ["mlp", "self_attn"] and layer != "rotary_emb":
                 categories.setdefault(category, list()).append(wt)
