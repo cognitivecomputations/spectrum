@@ -6,7 +6,7 @@ import time
 
 import numpy as np
 import torch
-from prompt_toolkit.shortcuts import checkboxlist_dialog, input_dialog
+from prompt_toolkit.shortcuts import input_dialog
 from tqdm import tqdm
 from transformers import AutoConfig, AutoModelForCausalLM
 
@@ -20,18 +20,22 @@ class ModelModifier:
 
         if model_name:
             try:
-                self.model = AutoModelForCausalLM.from_pretrained(
-                    model_name,
-                    torch_dtype=torch.float32,
-                    low_cpu_mem_usage=True,
-                    trust_remote_code=True,
-                    device_map="auto"
-                ) if cuda else AutoModelForCausalLM.from_pretrained(
-                    model_name,
-                    torch_dtype=torch.float32,
-                    trust_remote_code=True,
-                    device_map="cpu"
-                )
+                if cuda:
+                    torch.cuda.empty_cache()
+                    self.model = AutoModelForCausalLM.from_pretrained(
+                        model_name,
+                        torch_dtype=torch.float32,
+                        low_cpu_mem_usage=True,
+                        trust_remote_code=True,
+                        device_map="auto"
+                    )
+                else:
+                    self.model = AutoModelForCausalLM.from_pretrained(
+                        model_name,
+                        torch_dtype=torch.float32,
+                        trust_remote_code=True,
+                        device_map="cpu"
+                    )
             except KeyError as e:
                 print(f"Error loading model: {e}")
                 print("Attempting to load with custom configuration...")
@@ -61,7 +65,6 @@ class ModelModifier:
             self.model = None
 
         self.layer_snr = dict()
-        self.layer_types = list()
 
 
     def get_weight_types(self):
@@ -70,7 +73,7 @@ class ModelModifier:
         for name, module in self.model.named_modules():
             parts = name.split('.')
 
-            if any(hasattr(module, attr) for attr in ['weight', 'bias','inv_freq']):
+            if any(hasattr(module, attr) for attr in ['weight', 'bias', 'inv_freq']):
                 layer_index = next((i for i, part in enumerate(parts) if part.isdigit()), -1)
                 weight_type = '.'.join(parts[layer_index + 1:]) if layer_index != -1 else name
                 weight_types.add(weight_type)
@@ -78,26 +81,16 @@ class ModelModifier:
         return list(weight_types)
 
 
-    def interactive_select_weights(self):
+    def select_weights(self):
         weight_types = self.get_weight_types()
-        sorted_weight_types = self.sort_weight_types(weight_types)
-        selected_types = checkboxlist_dialog(
-            title="Select Weight Types",
-            text="Deselect the weight types you do not want to scan for SNR:",
-            values=[(wt, wt) for wt in sorted_weight_types],
-            default_values=sorted_weight_types
-        ).run()
-        self.layer_types = selected_types
-
-        return selected_types
-
-
-    def sort_weight_types(self, weight_types):
         categories = dict()
 
         for wt in weight_types:
-            category = wt.split('.')[0]
-            categories.setdefault(category, list()).append(wt)
+            print(wt)
+            category, layer = wt.split('.')
+
+            if category in ["mlp", "self_attn"] and layer != "rotary_emb":
+                categories.setdefault(category, list()).append(wt)
 
         sorted_categories = {k: sorted(v) for k, v in sorted(categories.items(), key=lambda item: item[0])}
         sorted_weight_types = [wt for sublist in sorted_categories.values() for wt in sublist]
@@ -274,7 +267,7 @@ def main():
         batch_size = input_dialog(title="Batch Size", text="Enter the batch size:").run()
         batch_size = int(batch_size) if batch_size else 1
         modifier = ModelModifier(model_name=args.model_name, batch_size=batch_size, cuda=args.cuda)
-        selected_weight_types = modifier.interactive_select_weights()
+        selected_weight_types = modifier.select_weights()
 
         if selected_weight_types:
             modifier.assess_layers_snr(selected_weight_types)
