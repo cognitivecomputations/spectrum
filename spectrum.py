@@ -166,7 +166,7 @@ class ModelModifier:
 
     def save_snr_to_json(self):
         model_name_slug = (
-            os.path.basename(self.model_name)
+            os.path.basename(self.model_name).replace("_", "-")
             if os.path.exists(self.model_name)
             else self.model_name.replace("/", "-").replace("_", "-")
         )
@@ -262,6 +262,31 @@ class ModelModifier:
         print(f"All SNR layers sorted and saved to {filename}")
 
 
+def calculate_model_snr(model: str, top_percent: int, batch_size: int = 1, cuda: bool = False):
+    model_name_slug = (
+        os.path.basename(model).replace("_", "-")
+        if os.path.exists(model)
+        else model.replace("/", "-").replace("_", "-")
+    )
+    snr_file_path = os.path.join("model_snr_results", f"snr_results_{model_name_slug}.json")
+
+    if os.path.exists(snr_file_path):
+        print(f"Found existing SNR results file for {model}")
+        modifier = ModelModifier(top_percent=top_percent, cuda=cuda)
+        modifier.generate_unfrozen_params_yaml(snr_file_path, top_percent)
+    else:
+        print(f"No existing SNR results file found for {model}. Proceeding with SNR calculation.")
+        modifier = ModelModifier(model_name=model, batch_size=batch_size, cuda=cuda)
+        selected_weight_types = modifier.select_weights()
+
+        if selected_weight_types:
+            modifier.assess_layers_snr(selected_weight_types)
+            modifier.save_snr_to_json()
+            print("Finished SNR rating.")
+        else:
+            print("No weight types selected.")
+
+
 def main():
     # Handle command-line arguments
     parser = argparse.ArgumentParser(description="Process SNR data for layers.")
@@ -271,25 +296,7 @@ def main():
     parser.add_argument("--cuda", type=bool, default=False, help="Whether to use the GPU")
     args = parser.parse_args()
 
-    # Check for existing SNR results file
-    model_name_slug = args.model_name.replace("/", "-").replace("_", "-")
-    snr_file_path = os.path.join("model_snr_results", f"snr_results_{model_name_slug}.json")
-
-    if os.path.exists(snr_file_path):
-        print(f"Found existing SNR results file for {args.model_name}")
-        modifier = ModelModifier(top_percent=args.top_percent, cuda=args.cuda)
-        modifier.generate_unfrozen_params_yaml(snr_file_path, args.top_percent)
-    else:
-        print(f"No existing SNR results file found for {args.model_name}. Proceeding with SNR calculation.")
-        modifier = ModelModifier(model_name=args.model_name, batch_size=args.batch_size, cuda=args.cuda)
-        selected_weight_types = modifier.select_weights()
-
-        if selected_weight_types:
-            modifier.assess_layers_snr(selected_weight_types)
-            modifier.save_snr_to_json()
-            print("Finished SNR rating.")
-        else:
-            print("No weight types selected.")
+    calculate_model_snr(args.model_name, args.top_percent, args.batch_size, args.cuda)
 
 
 if __name__ == "__main__":
