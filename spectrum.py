@@ -6,7 +6,6 @@ import time
 
 import numpy as np
 import torch
-from prompt_toolkit.shortcuts import input_dialog
 from tqdm import tqdm
 from transformers import AutoConfig, AutoModelForCausalLM
 
@@ -250,7 +249,8 @@ def main():
     # Handle command-line arguments
     parser = argparse.ArgumentParser(description="Process SNR data for layers.")
     parser.add_argument('--model-name', type=str, required=True, help='Model name or path to the model')
-    parser.add_argument('--top-percent', type=int, default=50, help='Top percentage of layers to select, overriding the default')
+    parser.add_argument('--top-percent', type=int, default=50, help='Top percentage of layers to select')
+    parser.add_argument('--batch-size', type=int, default=1, help='Job batch size')
     parser.add_argument('--cuda', type=bool, default=False, help='Whether to use the GPU')
     args = parser.parse_args()
 
@@ -264,15 +264,13 @@ def main():
         modifier.generate_unfrozen_params_yaml(snr_file_path, args.top_percent)
     else:
         print(f"No existing SNR results file found for {args.model_name}. Proceeding with SNR calculation.")
-        batch_size = input_dialog(title="Batch Size", text="Enter the batch size:").run()
-        batch_size = int(batch_size) if batch_size else 1
-        modifier = ModelModifier(model_name=args.model_name, batch_size=batch_size, cuda=args.cuda)
+        modifier = ModelModifier(model_name=args.model_name, batch_size=args.batch_size, cuda=args.cuda)
         selected_weight_types = modifier.select_weights()
 
         if selected_weight_types:
             modifier.assess_layers_snr(selected_weight_types)
             modifier.save_snr_to_json()
-            print("Finished SNR scanning and data saved.")
+            print("Finished SNR rating.")
         else:
             print("No weight types selected.")
 
