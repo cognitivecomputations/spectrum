@@ -1,10 +1,4 @@
-auto_mix_prep
-datasets
-icecream
 numpy
-pandas
-prompt_toolkit
-pydantic
 torch
 tqdm
 transformers
