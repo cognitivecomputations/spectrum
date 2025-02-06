@@ -8,12 +8,14 @@ import argparse
 from tqdm import tqdm
 import os
 import time
+import random
 
 class ModelModifier:
-    def __init__(self, model_name=None, top_percent=50, batch_size=1):
+    def __init__(self, model_name=None, top_percent=50, batch_size=1, spectral_randomness=0.0):
         self.model_name = model_name
         self.top_percent = top_percent
         self.batch_size = batch_size
+        self.spectral_randomness = spectral_randomness
 
         if model_name:
             try:
@@ -38,7 +40,6 @@ class ModelModifier:
                     device_map="auto"
                 )
             
-            # Check if the model config has rope_scaling
             if not hasattr(self.model.config, 'rope_scaling'):
                 self.model.config.rope_scaling = {'type': 'linear'}
             elif not isinstance(self.model.config.rope_scaling, dict):
@@ -55,7 +56,7 @@ class ModelModifier:
         weight_types = set()
         for name, module in self.model.named_modules():
             parts = name.split('.')
-            if any(hasattr(module, attr) for attr in ['weight', 'bias','inv_freq']):
+            if any(hasattr(module, attr) for attr in ['weight', 'bias', 'inv_freq']):
                 layer_index = next((i for i, part in enumerate(parts) if part.isdigit()), -1)
                 weight_type = '.'.join(parts[layer_index + 1:]) if layer_index != -1 else name
                 weight_types.add(weight_type)
@@ -120,7 +121,6 @@ class ModelModifier:
         return sigma_estimated
 
     def assess_layers_snr(self, selected_weight_types):
-        total_layers = sum(1 for name, module in self.model.named_modules() if any(layer_type in name for layer_type in selected_weight_types) and hasattr(module, 'weight'))
         start_time = time.time()
 
         with tqdm(total=len(selected_weight_types), unit='type', desc='Calculating SNR for types') as progress_bar:
@@ -136,20 +136,19 @@ class ModelModifier:
         model_name_slug = self.model_name.replace('/', '-').replace('_', '-')
         directory = 'model_snr_results'
         filename = os.path.join(directory, f'snr_results_{model_name_slug}.json')
-        
-        # Ensure the directory exists
+
         if not os.path.exists(directory):
             os.makedirs(directory)
-        
+
         serializable_data = {}
         for layer_name, info in self.layer_snr.items():
             snr_value = info['snr'].item() if isinstance(info['snr'], torch.Tensor) else info['snr']
             layer_type = str(info['type'])
             serializable_data[layer_name] = {'snr': snr_value, 'type': layer_type}
-        
+
         with open(filename, 'w') as file:
             json.dump(serializable_data, file, indent=4)
-        
+
         print(f"Results saved to {filename}")
         self.save_top_snr_ratios_to_json(filename)
         self.generate_unfrozen_params_yaml(filename)
@@ -158,18 +157,61 @@ class ModelModifier:
         top_percent = top_percent if top_percent is not None else self.top_percent
         with open(json_filename, 'r') as file:
             snr_data = json.load(file)
+
+        # Gather layers by type
         unfrozen_parameters = {}
         for layer_name, info in snr_data.items():
             layer_type = info['type']
             if layer_type not in unfrozen_parameters:
                 unfrozen_parameters[layer_type] = []
             unfrozen_parameters[layer_type].append((layer_name, info['snr']))
+
+        # Sort each type descending, pick top N
         top_layers_by_type = {}
+        total_chosen = 0
+        total_random_chosen = 0
+
         for layer_type, layers in unfrozen_parameters.items():
             layers_sorted = sorted(layers, key=lambda x: x[1], reverse=True)
             num_top_layers = int(len(layers) * top_percent / 100)
-            top_layers_by_type[layer_type] = [layer[0] for layer in layers_sorted[:num_top_layers]]
-        # Modify the yaml_filename to include the input json name and top_percent
+
+            chosen_top = layers_sorted[:num_top_layers]
+
+            # This boundary slice is used for random sampling
+            boundary_random_sample = []
+            if self.spectral_randomness > 0.0:
+                boundary_start = num_top_layers
+                boundary_end = min(
+                    len(layers_sorted),
+                    num_top_layers + int(len(layers_sorted) * self.spectral_randomness)
+                )
+                boundary_slice = layers_sorted[boundary_start:boundary_end]
+
+                if boundary_slice:
+                    sample_count = len(boundary_slice) // 2  # or adjust as desired
+                    boundary_random_sample = random.sample(boundary_slice, sample_count)
+
+                chosen_top += boundary_random_sample
+
+            # Logging info per layer type
+            print(
+                f"[{layer_type}] total_layers={len(layers_sorted)} | "
+                f"strict_top={num_top_layers} | "
+                f"boundary_slice_size={len(layers_sorted) - num_top_layers if boundary_end else 0} | "
+                f"randomly_chosen_from_boundary={len(boundary_random_sample)}"
+            )
+
+            total_chosen += len(chosen_top)
+            total_random_chosen += len(boundary_random_sample)
+            top_layers_by_type[layer_type] = [layer[0] for layer in chosen_top]
+
+        # Final summary of how many were chosen
+        print(
+            f"Total layers chosen (across all types): {total_chosen}\n"
+            f" - of which {total_random_chosen} were chosen by spectral randomness."
+        )
+
+        # Write out the YAML
         json_file_base = os.path.splitext(os.path.basename(json_filename))[0]
         yaml_filename = f"{json_file_base}_unfrozenparameters_{top_percent}percent.yaml"
         with open(yaml_filename, 'w') as file:
@@ -180,17 +222,20 @@ class ModelModifier:
                 file.write(f"# {layer_type} layers\n")
                 for layer_name in layer_names:
                     file.write(f"- {layer_name}\n")
-        print(f"Top {top_percent}% SNR layers saved to {yaml_filename}")
+
+        print(f"Top {top_percent}% (+ spectral randomness) SNR layers saved to {yaml_filename}")
 
     def save_top_snr_ratios_to_json(self, json_filename, filename=None):
         with open(json_filename, 'r') as file:
             snr_data = json.load(file)
+
         all_snr_layers = {}
         for layer_name, info in snr_data.items():
             layer_type = info['type']
             if layer_type not in all_snr_layers:
                 all_snr_layers[layer_type] = []
             all_snr_layers[layer_type].append((layer_name, info['snr']))
+
         for layer_type, layers in all_snr_layers.items():
             layers_sorted = sorted(layers, key=lambda x: x[1], reverse=True)
             all_snr_layers[layer_type] = {layer[0]: layer[1] for layer in layers_sorted}
@@ -203,25 +248,29 @@ class ModelModifier:
         print(f"All SNR layers sorted and saved to {filename}")
 
 def main():
-    # Handle command-line arguments
     parser = argparse.ArgumentParser(description="Process SNR data for layers.")
     parser.add_argument('--model-name', type=str, required=True, help='Model name or path to the model')
     parser.add_argument('--top-percent', type=int, default=None, help='Top percentage of layers to select, overriding the default')
+    parser.add_argument('--spectral-randomness', type=float, default=0.0, help='Randomly includes some boundary layers around the top X%')
     args = parser.parse_args()
 
-    # Check for existing SNR results file
     model_name_slug = args.model_name.replace('/', '-').replace('_', '-')
     snr_file_path = os.path.join('model_snr_results', f'snr_results_{model_name_slug}.json')
 
     if os.path.exists(snr_file_path):
         print(f"Found existing SNR results file for {args.model_name}")
-        modifier = ModelModifier(top_percent=args.top_percent)
+        modifier = ModelModifier(top_percent=args.top_percent, spectral_randomness=args.spectral_randomness)
         modifier.generate_unfrozen_params_yaml(snr_file_path, args.top_percent)
     else:
         print(f"No existing SNR results file found for {args.model_name}. Proceeding with SNR calculation.")
         batch_size = input_dialog(title="Batch Size", text="Enter the batch size:").run()
         batch_size = int(batch_size) if batch_size else 1
-        modifier = ModelModifier(model_name=args.model_name, batch_size=batch_size)
+        modifier = ModelModifier(
+            model_name=args.model_name, 
+            batch_size=batch_size, 
+            top_percent=args.top_percent if args.top_percent else 50, 
+            spectral_randomness=args.spectral_randomness
+        )
         selected_weight_types = modifier.interactive_select_weights()
         if selected_weight_types:
             modifier.assess_layers_snr(selected_weight_types)
