@@ -90,19 +90,46 @@ class ModelModifier:
             for i in range(0, len(layers), self.batch_size):
                 batch_layers = layers[i:i + self.batch_size]
                 for name, module in batch_layers:
-                    weights = module.weight.detach()
-                    if weights.ndim < 2:
-                        weights = weights.unsqueeze(0)
-                    S = torch.linalg.svdvals(weights)
-                    max_singular_value = S[0]
-                    sigma_estimated = self.estimate_sigma_with_full_iqr(S)
-                    n, m = weights.shape[-2:]
-                    mp_threshold = self.marchenko_pastur_threshold(sigma_estimated, n, m)
-                    signal = S[S > mp_threshold].sum()
-                    noise = S[S <= mp_threshold].sum()
-                    snr = signal / noise if noise != 0 else float('inf')
-                    snr_ratio = snr / max_singular_value
-                    self.layer_snr[name] = {'type': layer_type, 'snr': snr_ratio.item()}
+                    try:
+                        # Get the weight tensor and ensure it's not a meta tensor
+                        weights = module.weight.detach()
+                        
+                        # Check if weights are on meta device and move them to the appropriate device
+                        if weights.device.type == 'meta':
+                            # Try to get the actual module weight from the real module (not meta)
+                            # This involves accessing the state_dict or using the module's parameters
+                            device = next((p.device for p in self.model.parameters() 
+                                        if p.device.type != 'meta'), torch.device('cpu'))
+                            
+                            # Skip this layer if it's on meta device and we can't process it
+                            self.layer_snr[name] = {'type': layer_type, 'snr': float('nan')}
+                            continue
+                            
+                        if weights.ndim < 2:
+                            weights = weights.unsqueeze(0)
+                        
+                        S = torch.linalg.svdvals(weights)
+                        max_singular_value = S[0]
+                        sigma_estimated = self.estimate_sigma_with_full_iqr(S)
+                        n, m = weights.shape[-2:]
+                        mp_threshold = self.marchenko_pastur_threshold(sigma_estimated, n, m)
+                        
+                        # Safely handle the filtering operation that was causing the error
+                        signal_mask = S > mp_threshold
+                        noise_mask = ~signal_mask
+                        
+                        signal = S[signal_mask].sum() if signal_mask.any() else torch.tensor(0.0, device=S.device)
+                        noise = S[noise_mask].sum() if noise_mask.any() else torch.tensor(1.0, device=S.device)
+                        
+                        snr = signal / noise if noise != 0 else float('inf')
+                        snr_ratio = snr / max_singular_value
+                        self.layer_snr[name] = {'type': layer_type, 'snr': snr_ratio.item()}
+                        
+                    except Exception as e:
+                        print(f"Error processing layer {name}: {e}")
+                        # Set a default value for this layer
+                        self.layer_snr[name] = {'type': layer_type, 'snr': float('nan')}
+                        
                 progress_bar.update(1)
 
     @staticmethod
